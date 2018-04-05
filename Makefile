@@ -4,12 +4,16 @@ PYTHON?=${CWD}/bin/python
 
 BASE?=setuptools wheel
 
+.PHONY: server
+server: pyvenv.cfg
+	${PYTHON} mdnserver.py
 
-.DEFAULT: venv
-venv: ${PYTHON}
-${PYTHON}: requirements.txt
+pyvenv.cfg: requirements.txt
 	python3 -mvenv ${CWD}
 	${PIP} install --upgrade pip
 	${PIP} install --upgrade ${BASE}
 	${PIP} install -r requirements.txt
 
+.PHONY: clean
+clean:
+	git clean -xfd
