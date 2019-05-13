@@ -6,7 +6,7 @@ from time import sleep
 from dnslib import QTYPE, RR, dns
 from dnslib.proxy import ProxyResolver
 from dnslib.server import DNSServer
-
+from dnslib.server import DNSRecord
 
 class Resolver(ProxyResolver):
     # Do nothing init, but defined so it doesn't call the super class'
@@ -31,6 +31,13 @@ class Resolver(ProxyResolver):
 
         # Strip trailing period.
         host = str(request.q.qname).rstrip(".")
+        
+        if not host.endswith(".local"):
+            a = DNSRecord.parse(DNSRecord.question(host).send("8.8.8.8", 53))
+            for rr in a.rr:
+                if rr.rtype == request.q.qtype:
+                    reply.add_answer(rr)
+            return reply
 
         try:
             # Use avahi-resolve to determine the .local host IP address.
