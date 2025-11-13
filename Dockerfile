@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create avahi user and group (required by avahi-daemon)
-RUN groupadd -r avahi && useradd -r -g avahi -d /var/run/avahi-daemon -s /usr/sbin/nologin avahi
+#RUN groupadd -r avahi && useradd -r -g avahi -d /var/run/avahi-daemon -s /usr/sbin/nologin avahi
 
 # Create non-root user for mdnserver
 RUN useradd -m -u 1000 -s /bin/bash mdnserver
@@ -55,8 +55,10 @@ RUN mkdir -p /var/run/mdnserver && \
     chown -R avahi:avahi /var/run/avahi-daemon
 
 # Configure avahi-daemon for container use
+# Enable D-Bus (needed for avahi-resolve to communicate with daemon)
 # Disable publishing (we only need to resolve, not publish)
 RUN sed -i 's/#enable-dbus=yes/enable-dbus=yes/' /etc/avahi/avahi-daemon.conf && \
+    sed -i 's/enable-dbus=no/enable-dbus=yes/' /etc/avahi/avahi-daemon.conf && \
     sed -i 's/#enable-reflector=no/enable-reflector=yes/' /etc/avahi/avahi-daemon.conf && \
     sed -i 's/#publish-hinfo=no/publish-hinfo=no/' /etc/avahi/avahi-daemon.conf && \
     sed -i 's/#publish-workstation=yes/publish-workstation=no/' /etc/avahi/avahi-daemon.conf && \
@@ -73,32 +75,23 @@ cleanup() {\n\
     if [ -n "$AVAHI_PID" ]; then\n\
         kill "$AVAHI_PID" 2>/dev/null || true\n\
     fi\n\
-    if [ -n "$DBUS_PID" ]; then\n\
-        kill "$DBUS_PID" 2>/dev/null || true\n\
-    fi\n\
     exit 0\n\
 }\n\
 trap cleanup SIGTERM SIGINT\n\
 \n\
-# Start dbus daemon\n\
+# Start dbus daemon (needed for avahi-resolve to communicate with avahi-daemon)\n\
 echo "Starting dbus daemon..."\n\
 eval $(dbus-launch --sh-syntax)\n\
 export DBUS_SESSION_BUS_ADDRESS\n\
-# Try to get DBUS PID (optional, for logging)\n\
-DBUS_PID=$(pgrep -f "dbus-daemon.*$DBUS_SESSION_BUS_ADDRESS" 2>/dev/null | head -1 || echo "")\n\
-if [ -n "$DBUS_PID" ]; then\n\
-    echo "dbus daemon started (PID: $DBUS_PID, address: $DBUS_SESSION_BUS_ADDRESS)"\n\
-else\n\
-    echo "dbus daemon started (address: $DBUS_SESSION_BUS_ADDRESS)"\n\
-fi\n\
-\n\
-# Verify dbus is accessible\n\
-if ! dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.ListNames > /dev/null 2>&1; then\n\
-    echo "WARNING: dbus session not accessible, but continuing..."\n\
-fi\n\
+# Create symlink so avahi-daemon can find system bus (it checks /run/dbus/system_bus_socket)\n\
+mkdir -p /run/dbus\n\
+# Create a symlink from system bus socket to our session bus\n\
+# This tricks avahi-daemon into using our session D-Bus\n\
+ln -sf "${DBUS_SESSION_BUS_ADDRESS#unix:path=}" /run/dbus/system_bus_socket 2>/dev/null || true\n\
+echo "dbus daemon started (address: $DBUS_SESSION_BUS_ADDRESS)"\n\
 \n\
 # Start avahi-daemon as root (needs root for network binding)\n\
-echo "Starting avahi-daemon with DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS..."\n\
+echo "Starting avahi-daemon..."\n\
 # Start in background and capture output\n\
 AVAHI_LOG=$(mktemp)\n\
 avahi-daemon --no-drop-root --no-chroot > "$AVAHI_LOG" 2>&1 &\n\
@@ -136,7 +129,7 @@ if ! avahi-resolve --name -4 localhost.local 2>/dev/null; then\n\
 fi\n\
 \n\
 # Switch to non-root user and start mdnserver\n\
-# DBUS_SESSION_BUS_ADDRESS is preserved in environment\n\
+# DBUS_SESSION_BUS_ADDRESS is needed for avahi-resolve\n\
 exec gosu mdnserver env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" mdnserver "$@"\n\
 ' > /usr/local/bin/start-mdnserver.sh && \
     chmod +x /usr/local/bin/start-mdnserver.sh
