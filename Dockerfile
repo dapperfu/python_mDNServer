@@ -35,7 +35,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
+# Create avahi user and group (required by avahi-daemon)
+RUN groupadd -r avahi && useradd -r -g avahi -d /var/run/avahi-daemon -s /usr/sbin/nologin avahi
+
+# Create non-root user for mdnserver
 RUN useradd -m -u 1000 -s /bin/bash mdnserver
 
 # Copy installed package from builder
@@ -48,7 +51,8 @@ ENV PATH=/home/mdnserver/.local/bin:$PATH
 RUN mkdir -p /var/run/mdnserver && \
     mkdir -p /var/run/dbus && \
     mkdir -p /var/run/avahi-daemon && \
-    chown -R mdnserver:mdnserver /var/run/mdnserver
+    chown -R mdnserver:mdnserver /var/run/mdnserver && \
+    chown -R avahi:avahi /var/run/avahi-daemon
 
 # Configure avahi-daemon for container use
 # Disable publishing (we only need to resolve, not publish)
@@ -88,21 +92,41 @@ else\n\
     echo "dbus daemon started (address: $DBUS_SESSION_BUS_ADDRESS)"\n\
 fi\n\
 \n\
+# Verify dbus is accessible\n\
+if ! dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.ListNames > /dev/null 2>&1; then\n\
+    echo "WARNING: dbus session not accessible, but continuing..."\n\
+fi\n\
+\n\
 # Start avahi-daemon as root (needs root for network binding)\n\
-echo "Starting avahi-daemon..."\n\
-avahi-daemon --daemonize --no-drop-root\n\
+echo "Starting avahi-daemon with DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS..."\n\
+# Start in background and capture output\n\
+AVAHI_LOG=$(mktemp)\n\
+avahi-daemon --no-drop-root --no-chroot > "$AVAHI_LOG" 2>&1 &\n\
+AVAHI_BG_PID=$!\n\
 \n\
-# Wait a moment for avahi-daemon to be ready\n\
-sleep 2\n\
+# Wait a moment and check if it's still running\n\
+sleep 3\n\
 \n\
-# Check if avahi-daemon is running and get PID\n\
-AVAHI_PID=$(pgrep -x avahi-daemon 2>/dev/null | head -1 || echo "")\n\
-if [ -z "$AVAHI_PID" ]; then\n\
-    echo "ERROR: avahi-daemon failed to start"\n\
-    echo "Checking for error messages..."\n\
-    avahi-daemon --no-drop-root --no-chroot 2>&1 | head -20 || true\n\
+# Check if the background process is still running\n\
+if ! kill -0 $AVAHI_BG_PID 2>/dev/null; then\n\
+    echo "ERROR: avahi-daemon failed to start. Output:"\n\
+    cat "$AVAHI_LOG" 2>/dev/null || true\n\
+    rm -f "$AVAHI_LOG"\n\
     exit 1\n\
 fi\n\
+\n\
+# If it's running, get the actual avahi-daemon PID (it might have forked)\n\
+AVAHI_PID=$(pgrep -x avahi-daemon 2>/dev/null | head -1 || echo "")\n\
+if [ -z "$AVAHI_PID" ]; then\n\
+    echo "WARNING: avahi-daemon process not found, but background process is running"\n\
+    AVAHI_PID=$AVAHI_BG_PID\n\
+else\n\
+    # Kill the background process if avahi-daemon forked\n\
+    if [ "$AVAHI_PID" != "$AVAHI_BG_PID" ]; then\n\
+        kill $AVAHI_BG_PID 2>/dev/null || true\n\
+    fi\n\
+fi\n\
+rm -f "$AVAHI_LOG"\n\
 \n\
 echo "avahi-daemon started successfully (PID: $AVAHI_PID)"\n\
 \n\

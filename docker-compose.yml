@@ -22,7 +22,7 @@ services:
     #   - ./config:/etc/mdnserver:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "dig", "@127.0.0.1", "-p", "5053", "+short", "+timeout=2", "test.local"]
+      test: ["CMD", "dig", "@127.0.0.1", "-p", "5053", "+short", "+timeout=2", "tub.local"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -34,6 +34,20 @@ services:
       - NET_ADMIN
       - NET_RAW
       - SYS_ADMIN
+
+  # mDNS reflector to reflect mDNS traffic across networks
+  mdns-reflector:
+    image: flungo/avahi:latest
+    container_name: mdns-reflector
+    network_mode: host
+    environment:
+      - REFLECTOR_ENABLE_REFLECTOR=yes
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+    depends_on:
+      - mdnserver
 
   # Optional: Example with dnsmasq pointing to mdnserver
   # dnsmasq:
