@@ -1,0 +1,30 @@
+[Unit]
+Description=mDNServer - DNS server for mDNS resolution via avahi-resolve
+Documentation=https://github.com/jedfrey/python_mDNServer
+After=network.target avahi-daemon.service
+Wants=avahi-daemon.service
+
+[Service]
+Type=simple
+User=mdnserver
+Group=mdnserver
+ExecStart=/usr/local/bin/mdnserver --port 5053 --address 0.0.0.0 --systemd --log-level INFO
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mdnserver
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/run/mdnserver
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+

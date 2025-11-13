@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  mdnserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mdnserver:latest
+    container_name: mdnserver
+    # Use host network mode to access mDNS on the host
+    network_mode: host
+    # Alternative: use bridge network with port mapping
+    # ports:
+    #   - "5053:5053/udp"
+    #   - "5053:5053/tcp"
+    environment:
+      - MDNSERVER_PORT=5053
+      - MDNSERVER_ADDRESS=0.0.0.0
+      - MDNSERVER_LOG_LEVEL=INFO
+    # For bridge network mode, uncomment volumes if needed
+    # volumes:
+    #   - ./config:/etc/mdnserver:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "dig", "@127.0.0.1", "-p", "5053", "+short", "+timeout=2", "test.local"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    # Optional: run with specific user/group
+    # user: "1000:1000"
+    # Optional: add capabilities for network access
+    # cap_add:
+    #   - NET_ADMIN
+    #   - NET_RAW
+
+  # Optional: Example with dnsmasq pointing to mdnserver
+  # dnsmasq:
+  #   image: strm/dnsmasq:latest
+  #   container_name: dnsmasq
+  #   network_mode: host
+  #   volumes:
+  #     - ./dnsmasq.conf:/etc/dnsmasq.conf:ro
+  #   depends_on:
+  #     - mdnserver
+  #   restart: unless-stopped
+
