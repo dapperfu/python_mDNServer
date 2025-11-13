@@ -83,12 +83,35 @@ trap cleanup SIGTERM SIGINT\n\
 echo "Starting dbus daemon..."\n\
 eval $(dbus-launch --sh-syntax)\n\
 export DBUS_SESSION_BUS_ADDRESS\n\
+# Also set system bus to use session bus (avahi-daemon checks system bus)\n\
+export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"\n\
+echo "dbus daemon started (address: $DBUS_SESSION_BUS_ADDRESS)"\n\
+\n\
 # Create symlink so avahi-daemon can find system bus (it checks /run/dbus/system_bus_socket)\n\
 mkdir -p /run/dbus\n\
+# Extract the socket path from DBUS_SESSION_BUS_ADDRESS (format: unix:path=/tmp/dbus-...)\n\
+SESSION_SOCKET="${DBUS_SESSION_BUS_ADDRESS#unix:path=}"\n\
+# Remove any abstract socket prefix if present\n\
+SESSION_SOCKET="${SESSION_SOCKET#unix:abstract=}"\n\
+# Wait a moment for socket to be created\n\
+sleep 1\n\
 # Create a symlink from system bus socket to our session bus\n\
 # This tricks avahi-daemon into using our session D-Bus\n\
-ln -sf "${DBUS_SESSION_BUS_ADDRESS#unix:path=}" /run/dbus/system_bus_socket 2>/dev/null || true\n\
-echo "dbus daemon started (address: $DBUS_SESSION_BUS_ADDRESS)"\n\
+if [ -n "$SESSION_SOCKET" ] && [ -e "$SESSION_SOCKET" ]; then\n\
+    rm -f /run/dbus/system_bus_socket\n\
+    ln -sf "$SESSION_SOCKET" /run/dbus/system_bus_socket\n\
+    echo "Created symlink: /run/dbus/system_bus_socket -> $SESSION_SOCKET"\n\
+    # Verify symlink\n\
+    if [ -L /run/dbus/system_bus_socket ]; then\n\
+        echo "Symlink verified successfully"\n\
+    else\n\
+        echo "WARNING: Symlink creation may have failed"\n\
+    fi\n\
+else\n\
+    echo "WARNING: Could not create D-Bus symlink"\n\
+    echo "  SESSION_SOCKET=$SESSION_SOCKET"\n\
+    echo "  Socket exists: $([ -e "$SESSION_SOCKET" ] && echo yes || echo no)"\n\
+fi\n\
 \n\
 # Start avahi-daemon as root (needs root for network binding)\n\
 echo "Starting avahi-daemon..."\n\

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mdnserver:
     build:
@@ -46,8 +44,10 @@ services:
     command: >
       sh -c "
         apk add --no-cache bridge-utils iproute2 &&
-        chmod +x /bridge-interfaces.sh &&
-        /bridge-interfaces.sh &&
+        # Copy script to writable location and make executable
+        cp /bridge-interfaces.sh /tmp/bridge-interfaces.sh &&
+        chmod +x /tmp/bridge-interfaces.sh &&
+        /tmp/bridge-interfaces.sh &&
         # Keep container running
         while true; do sleep 3600; done
       "
