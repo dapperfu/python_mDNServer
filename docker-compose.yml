@@ -35,6 +35,29 @@ services:
       - NET_RAW
       - SYS_ADMIN
 
+  # Network bridge service to bridge interfaces for mDNS reflection
+  network-bridge:
+    image: alpine:latest
+    container_name: network-bridge
+    network_mode: host
+    privileged: true
+    volumes:
+      - ./scripts/bridge-interfaces.sh:/usr/local/bin/bridge-interfaces.sh:ro
+    command: >
+      sh -c "
+        apk add --no-cache bridge-utils iproute2 &&
+        bridge-interfaces.sh &&
+        # Keep container running
+        while true; do sleep 3600; done
+      "
+    environment:
+      - BRIDGE_INTERFACES=${BRIDGE_INTERFACES:-eth0 docker0}
+      - BRIDGE_NAME=${BRIDGE_NAME:-mdns-br0}
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    restart: unless-stopped
+
   # mDNS reflector to reflect mDNS traffic across networks
   mdns-reflector:
     image: flungo/avahi:latest
@@ -47,6 +70,7 @@ services:
       - NET_RAW
     restart: unless-stopped
     depends_on:
+      - network-bridge
       - mdnserver
 
   # Optional: Example with dnsmasq pointing to mdnserver
