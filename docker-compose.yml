@@ -29,10 +29,11 @@ services:
       start_period: 10s
     # Optional: run with specific user/group
     # user: "1000:1000"
-    # Optional: add capabilities for network access
-    # cap_add:
-    #   - NET_ADMIN
-    #   - NET_RAW
+    # Add capabilities for network access (needed for avahi-daemon)
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
 
   # Optional: Example with dnsmasq pointing to mdnserver
   # dnsmasq:
