@@ -93,24 +93,37 @@ mkdir -p /run/dbus\n\
 SESSION_SOCKET="${DBUS_SESSION_BUS_ADDRESS#unix:path=}"\n\
 # Remove any abstract socket prefix if present\n\
 SESSION_SOCKET="${SESSION_SOCKET#unix:abstract=}"\n\
-# Wait a moment for socket to be created\n\
-sleep 1\n\
+echo "Extracted socket path: $SESSION_SOCKET"\n\
+# Wait for socket to be created (with retries)\n\
+for i in 1 2 3 4 5; do\n\
+    if [ -e "$SESSION_SOCKET" ]; then\n\
+        echo "Socket found after $i attempts"\n\
+        break\n\
+    fi\n\
+    sleep 0.5\n\
+done\n\
 # Create a symlink from system bus socket to our session bus\n\
 # This tricks avahi-daemon into using our session D-Bus\n\
-if [ -n "$SESSION_SOCKET" ] && [ -e "$SESSION_SOCKET" ]; then\n\
-    rm -f /run/dbus/system_bus_socket\n\
-    ln -sf "$SESSION_SOCKET" /run/dbus/system_bus_socket\n\
-    echo "Created symlink: /run/dbus/system_bus_socket -> $SESSION_SOCKET"\n\
-    # Verify symlink\n\
-    if [ -L /run/dbus/system_bus_socket ]; then\n\
-        echo "Symlink verified successfully"\n\
+if [ -n "$SESSION_SOCKET" ]; then\n\
+    if [ -e "$SESSION_SOCKET" ]; then\n\
+        rm -f /run/dbus/system_bus_socket\n\
+        ln -sf "$SESSION_SOCKET" /run/dbus/system_bus_socket\n\
+        echo "Created symlink: /run/dbus/system_bus_socket -> $SESSION_SOCKET"\n\
+        # Verify symlink\n\
+        if [ -L /run/dbus/system_bus_socket ]; then\n\
+            echo "Symlink verified successfully"\n\
+            ls -la /run/dbus/system_bus_socket\n\
+        else\n\
+            echo "WARNING: Symlink creation may have failed"\n\
+        fi\n\
     else\n\
-        echo "WARNING: Symlink creation may have failed"\n\
+        echo "WARNING: Socket does not exist: $SESSION_SOCKET"\n\
+        echo "Attempting to create symlink anyway..."\n\
+        rm -f /run/dbus/system_bus_socket\n\
+        ln -sf "$SESSION_SOCKET" /run/dbus/system_bus_socket 2>&1 || echo "Symlink creation failed"\n\
     fi\n\
 else\n\
-    echo "WARNING: Could not create D-Bus symlink"\n\
-    echo "  SESSION_SOCKET=$SESSION_SOCKET"\n\
-    echo "  Socket exists: $([ -e "$SESSION_SOCKET" ] && echo yes || echo no)"\n\
+    echo "WARNING: Could not extract socket path from DBUS_SESSION_BUS_ADDRESS"\n\
 fi\n\
 \n\
 # Start avahi-daemon as root (needs root for network binding)\n\

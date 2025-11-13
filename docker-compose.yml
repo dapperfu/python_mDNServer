@@ -45,9 +45,15 @@ services:
       sh -c "
         apk add --no-cache bridge-utils iproute2 &&
         # Copy script to writable location and make executable
-        cp /bridge-interfaces.sh /tmp/bridge-interfaces.sh &&
-        chmod +x /tmp/bridge-interfaces.sh &&
-        /tmp/bridge-interfaces.sh &&
+        if [ -f /bridge-interfaces.sh ]; then
+          cp /bridge-interfaces.sh /tmp/bridge-interfaces.sh &&
+          chmod +x /tmp/bridge-interfaces.sh &&
+          /tmp/bridge-interfaces.sh
+        else
+          echo 'ERROR: /bridge-interfaces.sh not found'
+          ls -la /bridge-interfaces.sh || true
+          exit 1
+        fi &&
         # Keep container running
         while true; do sleep 3600; done
       "
