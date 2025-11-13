@@ -24,6 +24,7 @@ FROM python:3.11-slim
 # - dbus-x11: provides dbus-launch (needed for dbus session)
 # - gosu: for user switching in startup script
 # - dnsutils: provides dig command for healthcheck
+# - procps: provides pgrep, ps, and other process utilities
 RUN apt-get update && apt-get install -y --no-install-recommends \
     avahi-daemon \
     avahi-utils \
@@ -31,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus-x11 \
     gosu \
     dnsutils \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -78,20 +80,27 @@ trap cleanup SIGTERM SIGINT\n\
 echo "Starting dbus daemon..."\n\
 eval $(dbus-launch --sh-syntax)\n\
 export DBUS_SESSION_BUS_ADDRESS\n\
-DBUS_PID=$(pgrep -f dbus-daemon | head -1)\n\
-echo "dbus daemon started (PID: $DBUS_PID, address: $DBUS_SESSION_BUS_ADDRESS)"\n\
+# Try to get DBUS PID (optional, for logging)\n\
+DBUS_PID=$(pgrep -f "dbus-daemon.*$DBUS_SESSION_BUS_ADDRESS" 2>/dev/null | head -1 || echo "")\n\
+if [ -n "$DBUS_PID" ]; then\n\
+    echo "dbus daemon started (PID: $DBUS_PID, address: $DBUS_SESSION_BUS_ADDRESS)"\n\
+else\n\
+    echo "dbus daemon started (address: $DBUS_SESSION_BUS_ADDRESS)"\n\
+fi\n\
 \n\
 # Start avahi-daemon as root (needs root for network binding)\n\
 echo "Starting avahi-daemon..."\n\
 avahi-daemon --daemonize --no-drop-root\n\
-AVAHI_PID=$(pgrep -x avahi-daemon | head -1)\n\
 \n\
 # Wait a moment for avahi-daemon to be ready\n\
 sleep 2\n\
 \n\
-# Check if avahi-daemon is running\n\
-if ! pgrep -x avahi-daemon > /dev/null; then\n\
+# Check if avahi-daemon is running and get PID\n\
+AVAHI_PID=$(pgrep -x avahi-daemon 2>/dev/null | head -1 || echo "")\n\
+if [ -z "$AVAHI_PID" ]; then\n\
     echo "ERROR: avahi-daemon failed to start"\n\
+    echo "Checking for error messages..."\n\
+    avahi-daemon --no-drop-root --no-chroot 2>&1 | head -20 || true\n\
     exit 1\n\
 fi\n\
 \n\
